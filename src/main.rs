@@ -80,7 +80,7 @@ fn parse_string(input: &str) -> ParseStruct {
     let mut i = 0;
 
     while let (Some(token), delta_i) = parse_token(input, i) {
-        println!("Token: {:#?}, delta_i: {}", &token, delta_i);
+        // println!("Token: {:#?}, delta_i: {}", &token, delta_i);
         atoms.push(token);
         i = i + delta_i;
     }
