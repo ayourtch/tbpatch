@@ -33,103 +33,63 @@ struct ParseStruct {
     atoms: Vec<TextAtom>,
 }
 
-fn parse_base() -> ParseStruct {
-    let atoms = vec![
-        TextAtom {
-            token_value: format!("1"),
-            token_uuid: format!("x"),
-            leading_ws: format!("xy"),
-        },
-        TextAtom {
-            token_value: format!("2"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("3"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("4"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("5"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("6"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("7"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("8"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-    ];
+enum ParseTokenState {
+    LeadingWhiteSpace,
+    TokenValue,
+}
 
-    ParseStruct { atoms }
+fn parse_token(input: &str, i: usize) -> (Option<TextAtom>, usize) {
+    let mut atom = TextAtom {
+        token_value: format!(""),
+        token_uuid: format!(""),
+        leading_ws: format!(""),
+    };
+
+    if i >= input.len() {
+        return (None, 0);
+    }
+
+    let mut state = ParseTokenState::LeadingWhiteSpace;
+
+    let char_indices = input[i..].char_indices();
+    for (ci, ch) in char_indices {
+        match state {
+            ParseTokenState::LeadingWhiteSpace => {
+                if ch.is_whitespace() {
+                    atom.leading_ws.push(ch)
+                } else {
+                    atom.token_value.push(ch);
+                    state = ParseTokenState::TokenValue;
+                }
+            }
+            ParseTokenState::TokenValue => {
+                if ch.is_whitespace() {
+                    return (Some(atom), ci);
+                } else {
+                    atom.token_value.push(ch);
+                }
+            }
+        }
+    }
+
+    (Some(atom), input[i..].len())
 }
 
 fn parse_string(input: &str) -> ParseStruct {
-    let atoms = vec![
-        TextAtom {
-            token_value: format!("1"),
-            token_uuid: format!("x"),
-            leading_ws: format!("xx"),
-        },
-        TextAtom {
-            token_value: format!("1"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("2"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("1"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("3"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("5"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("6"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-        TextAtom {
-            token_value: format!("7"),
-            token_uuid: format!(""),
-            leading_ws: format!(""),
-        },
-    ];
+    let mut atoms: Vec<TextAtom> = vec![];
+    let mut i = 0;
 
+    while let (Some(token), delta_i) = parse_token(input, i) {
+        println!("Token: {:#?}, delta_i: {}", &token, delta_i);
+        atoms.push(token);
+        i = i + delta_i;
+    }
     ParseStruct { atoms }
 }
 
 fn main() {
-    let left = parse_base();
-    let right = parse_string("xx");
+    let left = parse_string("    xx yy    zzz   ");
+    let right = parse_string("xx tt    zzz   ");
 
     let diff = left.diff(&right);
     match diff {
