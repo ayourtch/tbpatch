@@ -87,9 +87,15 @@ fn parse_string(input: &str) -> ParseStruct {
     ParseStruct { atoms }
 }
 
+fn parse_nth_arg(i: usize) -> ParseStruct {
+    let fname = std::env::args().nth(i).unwrap();
+    let fdata = std::fs::read_to_string(fname).unwrap();
+    parse_string(&fdata)
+}
+
 fn main() {
-    let left = parse_string("    xx yy    zzz   ");
-    let right = parse_string("xx tt    zzz   ");
+    let left = parse_nth_arg(1);
+    let right = parse_nth_arg(2);
 
     let diff = left.diff(&right);
     match diff {
