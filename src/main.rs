@@ -28,8 +28,13 @@ impl Same for TextAtom {
     }
 }
 
-fn main() {
-    let left = vec![
+#[derive(Diffus, Debug)]
+struct ParseStruct {
+    atoms: Vec<TextAtom>,
+}
+
+fn parse_base() -> ParseStruct {
+    let atoms = vec![
         TextAtom {
             token_value: format!("1"),
             token_uuid: format!("x"),
@@ -71,7 +76,12 @@ fn main() {
             leading_ws: format!(""),
         },
     ];
-    let right = vec![
+
+    ParseStruct { atoms }
+}
+
+fn parse_string(input: &str) -> ParseStruct {
+    let atoms = vec![
         TextAtom {
             token_value: format!("1"),
             token_uuid: format!("x"),
@@ -114,47 +124,61 @@ fn main() {
         },
     ];
 
-    let diff = left.diff(&right);
+    ParseStruct { atoms }
+}
 
+fn main() {
+    let left = parse_base();
+    let right = parse_string("xx");
+
+    let diff = left.diff(&right);
     match diff {
-        edit::Edit::Copy(x) => println!("no difference: {:?}", &x),
-        edit::Edit::Change(diff) => {
-            diff.into_iter()
-                .map(|edit| {
-                    match edit {
-                        collection::Edit::Copy(elem) => println!("copy: {:?}", elem),
-                        collection::Edit::Insert(elem) => println!("insert: {:?}", elem),
-                        collection::Edit::Remove(elem) => println!("remove: {:?}", elem),
-                        collection::Edit::Change(EditedTextAtom {
-                            token_value,
-                            token_uuid,
-                            leading_ws,
-                        }) => {
-                            println!("changed:");
-                            match token_value {
-                                edit::Edit::Copy(x) => println!("    copy: id {:?}", &x),
-                                x => {
-                                    println!("    changed: id {:?}", &x);
-                                } /*
-                                  edit::Edit::Change((left_id, right_id)) => {
-                                      println!("    token_value: {} => {}", left_id, right_id)
-                                  }
-                                  */
-                            }
-                            println!("    token_uuid: {:?}", &token_uuid);
-                            println!("    leading_ws: {:?}", &leading_ws);
-                            /*
-                            match leading_ws {
-                                edit::Edit::Copy(x) => println!("    copy: ws {:?}", &x),
-                                edit::Edit::Change((left_ws, right_ws)) => {
-                                    println!("    value: {} => {}", left_ws, right_ws)
-                                }
-                            }
-                            */
-                        }
-                    };
-                })
-                .collect::<Vec<_>>();
+        edit::Edit::Copy(x) => {
+            println!("Identical parses: {:#?}", &x);
         }
-    };
+        edit::Edit::Change(EditedParseStruct { atoms }) => {
+            let diff = atoms;
+            match diff {
+                edit::Edit::Copy(x) => println!("no difference: {:?}", &x),
+                edit::Edit::Change(diff) => {
+                    diff.into_iter()
+                        .map(|edit| {
+                            match edit {
+                                collection::Edit::Copy(elem) => println!("copy: {:?}", elem),
+                                collection::Edit::Insert(elem) => println!("insert: {:?}", elem),
+                                collection::Edit::Remove(elem) => println!("remove: {:?}", elem),
+                                collection::Edit::Change(EditedTextAtom {
+                                    token_value,
+                                    token_uuid,
+                                    leading_ws,
+                                }) => {
+                                    println!("changed:");
+                                    match token_value {
+                                        edit::Edit::Copy(x) => println!("    copy: id {:?}", &x),
+                                        x => {
+                                            println!("    changed: id {:?}", &x);
+                                        } /*
+                                          edit::Edit::Change((left_id, right_id)) => {
+                                              println!("    token_value: {} => {}", left_id, right_id)
+                                          }
+                                          */
+                                    }
+                                    println!("    token_uuid: {:?}", &token_uuid);
+                                    println!("    leading_ws: {:?}", &leading_ws);
+                                    /*
+                                    match leading_ws {
+                                        edit::Edit::Copy(x) => println!("    copy: ws {:?}", &x),
+                                        edit::Edit::Change((left_ws, right_ws)) => {
+                                            println!("    value: {} => {}", left_ws, right_ws)
+                                        }
+                                    }
+                                    */
+                                }
+                            };
+                        })
+                        .collect::<Vec<_>>();
+                }
+            };
+        }
+    }
 }
