@@ -1,7 +1,5 @@
-use diffus::{
-    edit::{self, collection},
-    Diffable, Same,
-};
+use diffus::edit::{self, collection};
+use diffus::{Diffable, Same};
 use diffus_derive::Diffus;
 
 #[derive(Diffus, Debug)]
