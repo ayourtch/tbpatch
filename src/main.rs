@@ -93,11 +93,7 @@ fn parse_nth_arg(i: usize) -> ParseStruct {
     parse_string(&fdata)
 }
 
-fn main() {
-    let left = parse_nth_arg(1);
-    let right = parse_nth_arg(2);
-
-    let diff = left.diff(&right);
+fn print_diff<'a>(diff: diffus::edit::Edit<'a, ParseStruct>) {
     match diff {
         edit::Edit::Copy(x) => {
             println!("Identical parses: {:#?}", &x);
@@ -147,4 +143,12 @@ fn main() {
             };
         }
     }
+}
+
+fn main() {
+    let left = parse_nth_arg(1);
+    let right = parse_nth_arg(2);
+
+    let diff = left.diff(&right);
+    print_diff(diff);
 }
