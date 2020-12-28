@@ -87,9 +87,14 @@ fn parse_string(input: &str) -> ParseStruct {
     ParseStruct { atoms }
 }
 
-fn parse_nth_arg(i: usize) -> ParseStruct {
+fn read_nth_arg(i: usize) -> String {
     let fname = std::env::args().nth(i).unwrap();
     let fdata = std::fs::read_to_string(fname).unwrap();
+    fdata
+}
+
+fn parse_nth_arg(i: usize) -> ParseStruct {
+    let fdata = read_nth_arg(i);
     parse_string(&fdata)
 }
 
@@ -145,10 +150,43 @@ fn print_diff<'a>(diff: diffus::edit::Edit<'a, ParseStruct>) {
     }
 }
 
-fn main() {
+fn test_diffus() {
     let left = parse_nth_arg(1);
     let right = parse_nth_arg(2);
 
     let diff = left.diff(&right);
     print_diff(diff);
+}
+
+fn join_lines(lines: &Vec<unidiff::Line>) -> String {
+    format!(
+        "\n{}",
+        lines
+            .into_iter()
+            .map(|x| x.value.clone())
+            .collect::<Vec<String>>()
+            .join("\n")
+    )
+}
+
+fn test_unidiff() {
+    let diff_str = read_nth_arg(1);
+    let mut patch = unidiff::PatchSet::new();
+    patch.parse(diff_str).ok().expect("Error parsing diff");
+    // println!("{:#?}", &patch);
+    let hunk = patch.files().first().unwrap().hunks().first().unwrap();
+    // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
+    let src = join_lines(&hunk.source_lines());
+    let src = parse_string(&src);
+
+    let dst = join_lines(&hunk.target_lines());
+    let dst = parse_string(&dst);
+
+    let diff = src.diff(&dst);
+    print_diff(diff);
+    // println!("{:#?}", &hunk.target_lines().map(|x| x.value).collect());
+}
+
+fn main() {
+    test_unidiff();
 }
