@@ -1,3 +1,4 @@
+use ansi_term::Colour;
 use diffus::edit::{self, collection};
 use diffus::{Diffable, Same};
 use diffus_derive::Diffus;
@@ -150,6 +151,85 @@ fn print_diff<'a>(diff: diffus::edit::Edit<'a, ParseStruct>) {
     }
 }
 
+fn atom2str(atom: &TextAtom) -> String {
+    format!("{}{}", atom.leading_ws, atom.token_value)
+}
+
+fn print_diff_c<'a>(right: &ParseStruct, diff: diffus::edit::Edit<'a, ParseStruct>) {
+    let mut atom_index = 0;
+    match diff {
+        edit::Edit::Copy(x) => {
+            println!("Identical parses: {:#?}", &x);
+        }
+        edit::Edit::Change(EditedParseStruct { atoms }) => {
+            let diff = atoms;
+            match diff {
+                edit::Edit::Copy(x) => {
+                    x.into_iter().map(|xx| {
+                        print!("{}", &atom2str(&xx));
+                        atom_index = atom_index + 1;
+                    });
+                }
+                edit::Edit::Change(diff) => {
+                    diff.into_iter()
+                        .map(|edit| {
+                            match edit {
+                                collection::Edit::Copy(elem) => {
+                                    print!("{}", &atom2str(&elem));
+                                    atom_index = atom_index + 1;
+                                }
+                                collection::Edit::Insert(elem) => {
+                                    print!("{}", Colour::Green.paint(atom2str(&elem)));
+                                    atom_index = atom_index + 1;
+                                }
+                                collection::Edit::Remove(elem) => {
+                                    print!("{}", Colour::Red.paint(atom2str(&elem)));
+                                }
+                                collection::Edit::Change(EditedTextAtom {
+                                    token_value,
+                                    token_uuid,
+                                    leading_ws,
+                                }) => {
+                                    match token_value {
+                                        edit::Edit::Copy(x) => {
+                                            let ws = &right.atoms[atom_index].leading_ws;
+                                            let tok = &right.atoms[atom_index].token_value;
+                                            print!(
+                                                "{}",
+                                                Colour::Purple.paint(format!("{}{}", ws, &x))
+                                            );
+                                        }
+                                        x => {
+                                            println!("    changed: id {:?}", &x);
+                                        } /*
+                                          edit::Edit::Change((left_id, right_id)) => {
+                                              println!("    token_value: {} => {}", left_id, right_id)
+                                          }
+                                          */
+                                    }
+                                    atom_index = atom_index + 1;
+                                    /*
+                                    println!("    token_uuid: {:?}", &token_uuid);
+                                    println!("    leading_ws: {:?}", &leading_ws);
+                                    */
+                                    /*
+                                    match leading_ws {
+                                        edit::Edit::Copy(x) => println!("    copy: ws {:?}", &x),
+                                        edit::Edit::Change((left_ws, right_ws)) => {
+                                            println!("    value: {} => {}", left_ws, right_ws)
+                                        }
+                                    }
+                                    */
+                                }
+                            };
+                        })
+                        .collect::<Vec<_>>();
+                }
+            };
+        }
+    }
+}
+
 fn test_diffus() {
     let left = parse_nth_arg(1);
     let right = parse_nth_arg(2);
@@ -169,13 +249,7 @@ fn join_lines(lines: &Vec<unidiff::Line>) -> String {
     )
 }
 
-fn test_unidiff() {
-    let diff_str = read_nth_arg(1);
-    let mut patch = unidiff::PatchSet::new();
-    patch.parse(diff_str).ok().expect("Error parsing diff");
-    // println!("{:#?}", &patch);
-    let hunk = patch.files().first().unwrap().hunks().first().unwrap();
-    // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
+fn diff_hunk(hunk: &unidiff::Hunk) {
     let src = join_lines(&hunk.source_lines());
     let src = parse_string(&src);
 
@@ -183,10 +257,41 @@ fn test_unidiff() {
     let dst = parse_string(&dst);
 
     let diff = src.diff(&dst);
-    print_diff(diff);
+    // print_diff(diff);
+    print_diff_c(&dst, diff);
+    println!("\n");
+}
+
+fn test_unidiff() {
+    let diff_str = read_nth_arg(1);
+    let mut patch = unidiff::PatchSet::new();
+    patch.parse(diff_str).ok().expect("Error parsing diff");
+    // println!("{:#?}", &patch);
+    let hunk = patch.files().first().unwrap().hunks().first().unwrap();
+    for file in patch.files() {
+        println!("{}", Colour::Cyan.paint("==================="));
+        println!("{} {}", Colour::Cyan.paint("==="), file.source_file);
+        println!("{} {}", Colour::Cyan.paint("==="), file.target_file);
+        for hunk in file.hunks() {
+            println!("{} {}", Colour::Cyan.paint("==="), hunk.section_header);
+            println!(
+                "{} {:+0} lines [ {}[{}] {}[{}] ] =>\n",
+                Colour::Cyan.paint("==="),
+                hunk.added() as i64 - hunk.removed() as i64,
+                hunk.source_start,
+                hunk.source_length,
+                hunk.target_start,
+                hunk.target_length
+            );
+            diff_hunk(&hunk);
+        }
+    }
+    // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
+
     // println!("{:#?}", &hunk.target_lines().map(|x| x.value).collect());
 }
 
 fn main() {
     test_unidiff();
+    println!("\n");
 }
