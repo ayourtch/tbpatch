@@ -3,7 +3,7 @@ use diffus::edit::{self, collection};
 use diffus::{Diffable, Same};
 use diffus_derive::Diffus;
 
-#[derive(Diffus, Debug)]
+#[derive(Diffus, Debug, Clone)]
 struct TextAtom {
     token_value: String,
     token_uuid: String,
@@ -35,7 +35,7 @@ impl PartialEq for TextAtom {
     }
 }
 
-#[derive(Diffus, Debug)]
+#[derive(Diffus, Debug, Clone)]
 struct ParseStruct {
     atoms: Vec<TextAtom>,
 }
@@ -289,7 +289,26 @@ where
     None
 }
 
-fn do_patch(file: &unidiff::PatchedFile, hunk: &unidiff::Hunk, p: usize) {
+fn parse_patched_file(file: &unidiff::PatchedFile, p: usize) -> ParseStruct {
+    let path = std::path::Path::new(&file.source_file);
+    let mut comp = path.components();
+    // I can't do this: let path = path.components().skip(p).as_path();
+    // So I will do this:
+    for i in 0..p {
+        comp.next();
+    }
+    let path = comp.as_path();
+    let src_path = &path.to_str().unwrap();
+
+    println!("src path: {}", &src_path);
+    parse_file(&src_path)
+}
+
+fn do_patch(
+    src_file: &ParseStruct,
+    file: &unidiff::PatchedFile,
+    hunk: &unidiff::Hunk,
+) -> ParseStruct {
     let src = join_lines(&hunk.source_lines())
         .to_string()
         .trim_end_matches(char::is_whitespace)
@@ -304,54 +323,24 @@ fn do_patch(file: &unidiff::PatchedFile, hunk: &unidiff::Hunk, p: usize) {
 
     let diff = src.diff(&dst);
 
-    let path = std::path::Path::new(&file.source_file);
-    let mut comp = path.components();
-    // I can't do this: let path = path.components().skip(p).as_path();
-    // So I will do this:
-    for i in 0..p {
-        comp.next();
-    }
-    let path = comp.as_path();
-    let src_path = &path.to_str().unwrap();
-
-    println!("src path: {}", &src_path);
-    let src_file = parse_file(&src_path);
     print_diff_c(&dst, diff);
     let find_pos = find_needle(&src.atoms, &src_file.atoms);
     println!("FindPos: {:?} (of {})", &find_pos, src.atoms.len());
     if let Some(p) = find_pos {
-        let end = if src_file.atoms.len() > p + 5 {
-            p + 5
-        } else {
-            src_file.atoms.len()
+        let mut out_file = ParseStruct {
+            atoms: src_file.atoms[0..p].to_vec(),
         };
-    // println!("{:#?}", &src_file.atoms[p..end]);
+        /* FIXME: apply edit ops */
+        /* FIXME: copy the rest of src_file */
+        return src_file.clone();
+        return out_file;
     } else {
         // println!("needle: {:?}", &src.atoms);
         // println!("haystack: {:?}", &src_file.atoms)
         panic!("Can not find context");
     }
-}
 
-fn diff_hunk(file: &unidiff::PatchedFile, hunk: &unidiff::Hunk, op: HunkOp) {
-    match op {
-        HunkOp::ShowDiff => {
-            let src = join_lines(&hunk.source_lines());
-            let src = parse_string(&src);
-
-            let dst = join_lines(&hunk.target_lines());
-            let dst = parse_string(&dst);
-
-            let diff = src.diff(&dst);
-            print_diff_c(&dst, diff);
-            println!("\n");
-        }
-        HunkOp::Patch(p) => {
-            println!("patching with {} removal of leading elements", p);
-            do_patch(file, hunk, p);
-        }
-    }
-    // print_diff(diff);
+    return src_file.clone();
 }
 
 fn test_unidiff() {
@@ -364,6 +353,7 @@ fn test_unidiff() {
         println!("{}", Colour::Cyan.paint("==================="));
         println!("{} {}", Colour::Cyan.paint("==="), file.source_file);
         println!("{} {}", Colour::Cyan.paint("==="), file.target_file);
+        let mut src_file = parse_patched_file(file, 1);
         for hunk in file.hunks() {
             println!("{} {}", Colour::Cyan.paint("==="), hunk.section_header);
             println!(
@@ -375,8 +365,7 @@ fn test_unidiff() {
                 hunk.target_start,
                 hunk.target_length
             );
-            // diff_hunk(file, &hunk, HunkOp::ShowDiff);
-            diff_hunk(file, &hunk, HunkOp::Patch(1));
+            src_file = do_patch(&src_file, file, hunk);
         }
     }
     // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
