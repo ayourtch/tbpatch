@@ -29,6 +29,12 @@ impl Same for TextAtom {
     }
 }
 
+impl PartialEq for TextAtom {
+    fn eq(&self, other: &Self) -> bool {
+        self.token_value == other.token_value
+    }
+}
+
 #[derive(Diffus, Debug)]
 struct ParseStruct {
     atoms: Vec<TextAtom>,
@@ -86,6 +92,11 @@ fn parse_string(input: &str) -> ParseStruct {
         i = i + delta_i;
     }
     ParseStruct { atoms }
+}
+
+fn parse_file(fname: &str) -> ParseStruct {
+    let fdata = std::fs::read_to_string(fname).unwrap();
+    parse_string(&fdata)
 }
 
 fn read_nth_arg(i: usize) -> String {
@@ -228,6 +239,7 @@ fn print_diff_c<'a>(right: &ParseStruct, diff: diffus::edit::Edit<'a, ParseStruc
             };
         }
     }
+    println!("");
 }
 
 fn test_diffus() {
@@ -249,17 +261,97 @@ fn join_lines(lines: &Vec<unidiff::Line>) -> String {
     )
 }
 
-fn diff_hunk(hunk: &unidiff::Hunk) {
-    let src = join_lines(&hunk.source_lines());
+enum HunkOp {
+    ShowDiff,
+    Patch(usize),
+}
+
+pub fn find_needle<N, H>(needle: &[N], haystack: &[H]) -> Option<usize>
+where
+    N: PartialEq + std::cmp::PartialEq<H> + std::fmt::Debug,
+    H: PartialEq<N> + std::fmt::Debug,
+{
+    for (hi, ch) in haystack.into_iter().enumerate() {
+        let mut match_count = 0;
+        for (ni, cn) in needle.into_iter().enumerate() {
+            if hi + ni < haystack.len() && cn == &haystack[hi + ni] {
+                match_count = match_count + 1;
+            }
+        }
+        if match_count > needle.len() / 2 {
+            // println!("   matches: {} / {}", match_count, needle.len());
+        }
+
+        if match_count == needle.len() {
+            return Some(hi);
+        }
+    }
+    None
+}
+
+fn do_patch(file: &unidiff::PatchedFile, hunk: &unidiff::Hunk, p: usize) {
+    let src = join_lines(&hunk.source_lines())
+        .to_string()
+        .trim_end_matches(char::is_whitespace)
+        .to_string();
     let src = parse_string(&src);
 
-    let dst = join_lines(&hunk.target_lines());
+    let dst = join_lines(&hunk.target_lines())
+        .to_string()
+        .trim_end_matches(char::is_whitespace)
+        .to_string();
     let dst = parse_string(&dst);
 
     let diff = src.diff(&dst);
-    // print_diff(diff);
+
+    let path = std::path::Path::new(&file.source_file);
+    let mut comp = path.components();
+    // I can't do this: let path = path.components().skip(p).as_path();
+    // So I will do this:
+    for i in 0..p {
+        comp.next();
+    }
+    let path = comp.as_path();
+    let src_path = &path.to_str().unwrap();
+
+    println!("src path: {}", &src_path);
+    let src_file = parse_file(&src_path);
     print_diff_c(&dst, diff);
-    println!("\n");
+    let find_pos = find_needle(&src.atoms, &src_file.atoms);
+    println!("FindPos: {:?} (of {})", &find_pos, src.atoms.len());
+    if let Some(p) = find_pos {
+        let end = if src_file.atoms.len() > p + 5 {
+            p + 5
+        } else {
+            src_file.atoms.len()
+        };
+    // println!("{:#?}", &src_file.atoms[p..end]);
+    } else {
+        // println!("needle: {:?}", &src.atoms);
+        // println!("haystack: {:?}", &src_file.atoms)
+        panic!("Can not find context");
+    }
+}
+
+fn diff_hunk(file: &unidiff::PatchedFile, hunk: &unidiff::Hunk, op: HunkOp) {
+    match op {
+        HunkOp::ShowDiff => {
+            let src = join_lines(&hunk.source_lines());
+            let src = parse_string(&src);
+
+            let dst = join_lines(&hunk.target_lines());
+            let dst = parse_string(&dst);
+
+            let diff = src.diff(&dst);
+            print_diff_c(&dst, diff);
+            println!("\n");
+        }
+        HunkOp::Patch(p) => {
+            println!("patching with {} removal of leading elements", p);
+            do_patch(file, hunk, p);
+        }
+    }
+    // print_diff(diff);
 }
 
 fn test_unidiff() {
@@ -283,7 +375,8 @@ fn test_unidiff() {
                 hunk.target_start,
                 hunk.target_length
             );
-            diff_hunk(&hunk);
+            // diff_hunk(file, &hunk, HunkOp::ShowDiff);
+            diff_hunk(file, &hunk, HunkOp::Patch(1));
         }
     }
     // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
