@@ -304,6 +304,97 @@ fn parse_patched_file(file: &unidiff::PatchedFile, p: usize) -> ParseStruct {
     parse_file(&src_path)
 }
 
+fn apply_patch<'a>(
+    out_file: &mut ParseStruct,
+    right: &ParseStruct,
+    diff: diffus::edit::Edit<'a, ParseStruct>,
+) -> usize {
+    let mut atom_index = 0;
+    let mut src_skip = 0;
+    match diff {
+        edit::Edit::Copy(x) => {
+            for atom in &right.atoms {
+                out_file.atoms.push(atom.clone());
+                src_skip = src_skip + 1;
+            }
+        }
+        edit::Edit::Change(EditedParseStruct { atoms }) => {
+            let diff = atoms;
+            match diff {
+                edit::Edit::Copy(x) => {
+                    x.into_iter().map(|xx| {
+                        out_file.atoms.push(xx.clone());
+                        src_skip = src_skip + 1;
+                    });
+                }
+                edit::Edit::Change(diff) => {
+                    diff.into_iter()
+                        .map(|edit| {
+                            match edit {
+                                collection::Edit::Copy(elem) => {
+                                    out_file.atoms.push(elem.clone());
+                                    atom_index = atom_index + 1;
+                                    src_skip = src_skip + 1;
+                                }
+                                collection::Edit::Insert(elem) => {
+                                    out_file.atoms.push(elem.clone());
+                                    atom_index = atom_index + 1;
+                                }
+                                collection::Edit::Remove(elem) => {
+                                    /* do not push out_file.atoms.push(elem.clone()); */
+                                    src_skip = src_skip + 1;
+                                }
+                                collection::Edit::Change(EditedTextAtom {
+                                    token_value,
+                                    token_uuid,
+                                    leading_ws,
+                                }) => {
+                                    match token_value {
+                                        edit::Edit::Copy(x) => {
+                                            let ws = &right.atoms[atom_index].leading_ws;
+                                            let aid = &right.atoms[atom_index].token_uuid;
+                                            let tok = &right.atoms[atom_index].token_value;
+                                            let atom = TextAtom {
+                                                token_value: tok.to_string(),
+                                                token_uuid: aid.to_string(),
+                                                leading_ws: ws.to_string(),
+                                            };
+                                            out_file.atoms.push(atom);
+                                        }
+                                        x => {
+                                            println!("    changed: id {:?}", &x);
+                                            panic!("Editing the changed IDs is not supported");
+                                        } /*
+                                          edit::Edit::Change((left_id, right_id)) => {
+                                              println!("    token_value: {} => {}", left_id, right_id)
+                                          }
+                                          */
+                                    }
+                                    atom_index = atom_index + 1;
+                                    src_skip = src_skip + 1;
+                                    /*
+                                    println!("    token_uuid: {:?}", &token_uuid);
+                                    println!("    leading_ws: {:?}", &leading_ws);
+                                    */
+                                    /*
+                                    match leading_ws {
+                                        edit::Edit::Copy(x) => println!("    copy: ws {:?}", &x),
+                                        edit::Edit::Change((left_ws, right_ws)) => {
+                                            println!("    value: {} => {}", left_ws, right_ws)
+                                        }
+                                    }
+                                    */
+                                }
+                            };
+                        })
+                        .collect::<Vec<_>>();
+                }
+            };
+        }
+    }
+    return src_skip;
+}
+
 fn do_patch(
     src_file: &ParseStruct,
     file: &unidiff::PatchedFile,
@@ -322,17 +413,19 @@ fn do_patch(
     let dst = parse_string(&dst);
 
     let diff = src.diff(&dst);
-
     print_diff_c(&dst, diff);
+    let diff = src.diff(&dst);
+
     let find_pos = find_needle(&src.atoms, &src_file.atoms);
     println!("FindPos: {:?} (of {})", &find_pos, src.atoms.len());
     if let Some(p) = find_pos {
         let mut out_file = ParseStruct {
             atoms: src_file.atoms[0..p].to_vec(),
         };
-        /* FIXME: apply edit ops */
-        /* FIXME: copy the rest of src_file */
-        return src_file.clone();
+        let src_skip = apply_patch(&mut out_file, &dst, diff);
+        for atom in &src_file.atoms[p + src_skip..] {
+            out_file.atoms.push(atom.clone());
+        }
         return out_file;
     } else {
         // println!("needle: {:?}", &src.atoms);
