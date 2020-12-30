@@ -45,6 +45,10 @@ enum ParseTokenState {
     TokenValue,
 }
 
+fn is_ident(c: char) -> bool {
+    return c.is_ascii_alphanumeric() || c == '_';
+}
+
 fn parse_token(input: &str, i: usize) -> (Option<TextAtom>, usize) {
     let mut atom = TextAtom {
         token_value: format!(""),
@@ -57,6 +61,7 @@ fn parse_token(input: &str, i: usize) -> (Option<TextAtom>, usize) {
     }
 
     let mut state = ParseTokenState::LeadingWhiteSpace;
+    let mut is_id = false;
 
     let char_indices = input[i..].char_indices();
     for (ci, ch) in char_indices {
@@ -66,11 +71,12 @@ fn parse_token(input: &str, i: usize) -> (Option<TextAtom>, usize) {
                     atom.leading_ws.push(ch)
                 } else {
                     atom.token_value.push(ch);
+                    is_id = is_ident(ch);
                     state = ParseTokenState::TokenValue;
                 }
             }
             ParseTokenState::TokenValue => {
-                if ch.is_whitespace() {
+                if ch.is_whitespace() || is_id != is_ident(ch) {
                     return (Some(atom), ci);
                 } else {
                     atom.token_value.push(ch);
