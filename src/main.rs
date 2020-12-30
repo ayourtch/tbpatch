@@ -110,6 +110,14 @@ fn parse_nth_arg(i: usize) -> ParseStruct {
     parse_string(&fdata)
 }
 
+fn parse_struct2str(p: &ParseStruct) -> String {
+    let mut out_acc = String::new();
+    for atom in &p.atoms {
+        out_acc.push_str(&atom2str(&atom));
+    }
+    out_acc
+}
+
 fn print_diff<'a>(diff: diffus::edit::Edit<'a, ParseStruct>) {
     match diff {
         edit::Edit::Copy(x) => {
@@ -266,7 +274,7 @@ enum HunkOp {
     Patch(usize),
 }
 
-pub fn find_needle<N, H>(needle: &[N], haystack: &[H]) -> Option<usize>
+pub fn find_needle<N, H>(needle: &[N], haystack: &[H], debug: bool) -> Option<usize>
 where
     N: PartialEq + std::cmp::PartialEq<H> + std::fmt::Debug,
     H: PartialEq<N> + std::fmt::Debug,
@@ -274,12 +282,22 @@ where
     for (hi, ch) in haystack.into_iter().enumerate() {
         let mut match_count = 0;
         for (ni, cn) in needle.into_iter().enumerate() {
+            if debug {
+                println!("pos {}  : {:?} / {:?}", ni, &cn, &haystack[hi + ni]);
+            }
             if hi + ni < haystack.len() && cn == &haystack[hi + ni] {
                 match_count = match_count + 1;
+            } else {
+                break;
+            }
+            if debug {
+                println!("    {:?}  vs  {:?}", &cn, &haystack[hi + ni]);
             }
         }
-        if match_count > needle.len() / 2 {
-            // println!("   matches: {} / {}", match_count, needle.len());
+        if match_count > needle.len() / 2 || debug {
+            if debug {
+                println!("   matches: {} / {}", match_count, needle.len());
+            }
         }
 
         if match_count == needle.len() {
@@ -289,8 +307,8 @@ where
     None
 }
 
-fn parse_patched_file(file: &unidiff::PatchedFile, p: usize) -> ParseStruct {
-    let path = std::path::Path::new(&file.source_file);
+fn get_truncated_file_name(fname: &str, p: usize) -> String {
+    let path = std::path::Path::new(&fname);
     let mut comp = path.components();
     // I can't do this: let path = path.components().skip(p).as_path();
     // So I will do this:
@@ -298,7 +316,11 @@ fn parse_patched_file(file: &unidiff::PatchedFile, p: usize) -> ParseStruct {
         comp.next();
     }
     let path = comp.as_path();
-    let src_path = &path.to_str().unwrap();
+    path.to_str().unwrap().to_string()
+}
+
+fn parse_patched_file(file: &unidiff::PatchedFile, p: usize) -> ParseStruct {
+    let src_path = get_truncated_file_name(&file.source_file, p);
 
     println!("src path: {}", &src_path);
     parse_file(&src_path)
@@ -306,14 +328,19 @@ fn parse_patched_file(file: &unidiff::PatchedFile, p: usize) -> ParseStruct {
 
 fn apply_patch<'a>(
     out_file: &mut ParseStruct,
+    src_file: &ParseStruct,
+    p: usize,
     right: &ParseStruct,
     diff: diffus::edit::Edit<'a, ParseStruct>,
 ) -> usize {
     let mut atom_index = 0;
     let mut src_skip = 0;
+
+    println!("SRC: {:#?}", &src_file.atoms[p..p + 20]);
     match diff {
         edit::Edit::Copy(x) => {
             for atom in &right.atoms {
+                assert!(&src_file.atoms[p + src_skip] == atom);
                 out_file.atoms.push(atom.clone());
                 src_skip = src_skip + 1;
             }
@@ -323,6 +350,7 @@ fn apply_patch<'a>(
             match diff {
                 edit::Edit::Copy(x) => {
                     x.into_iter().map(|xx| {
+                        assert!(&src_file.atoms[p + src_skip] == xx);
                         out_file.atoms.push(xx.clone());
                         src_skip = src_skip + 1;
                     });
@@ -332,6 +360,7 @@ fn apply_patch<'a>(
                         .map(|edit| {
                             match edit {
                                 collection::Edit::Copy(elem) => {
+                                    assert!(&src_file.atoms[p + src_skip] == elem);
                                     out_file.atoms.push(elem.clone());
                                     atom_index = atom_index + 1;
                                     src_skip = src_skip + 1;
@@ -342,6 +371,7 @@ fn apply_patch<'a>(
                                 }
                                 collection::Edit::Remove(elem) => {
                                     /* do not push out_file.atoms.push(elem.clone()); */
+                                    assert!(&src_file.atoms[p + src_skip] == elem);
                                     src_skip = src_skip + 1;
                                 }
                                 collection::Edit::Change(EditedTextAtom {
@@ -359,6 +389,7 @@ fn apply_patch<'a>(
                                                 token_uuid: aid.to_string(),
                                                 leading_ws: ws.to_string(),
                                             };
+                                            assert!(&src_file.atoms[p + src_skip] == &atom);
                                             out_file.atoms.push(atom);
                                         }
                                         x => {
@@ -415,14 +446,16 @@ fn do_patch(
     let diff = src.diff(&dst);
     print_diff_c(&dst, diff);
     let diff = src.diff(&dst);
+    print_diff(diff);
+    let diff = src.diff(&dst);
 
-    let find_pos = find_needle(&src.atoms, &src_file.atoms);
+    let find_pos = find_needle(&src.atoms, &src_file.atoms, false);
     println!("FindPos: {:?} (of {})", &find_pos, src.atoms.len());
     if let Some(p) = find_pos {
         let mut out_file = ParseStruct {
             atoms: src_file.atoms[0..p].to_vec(),
         };
-        let src_skip = apply_patch(&mut out_file, &dst, diff);
+        let src_skip = apply_patch(&mut out_file, src_file, p, &dst, diff);
         for atom in &src_file.atoms[p + src_skip..] {
             out_file.atoms.push(atom.clone());
         }
@@ -430,6 +463,8 @@ fn do_patch(
     } else {
         // println!("needle: {:?}", &src.atoms);
         // println!("haystack: {:?}", &src_file.atoms)
+        let find_pos = find_needle(&src.atoms, &src_file.atoms, true);
+        println!("File:'{}'", parse_struct2str(src_file));
         panic!("Can not find context");
     }
 
@@ -460,6 +495,12 @@ fn test_unidiff() {
             );
             src_file = do_patch(&src_file, file, hunk);
         }
+        let mut out_acc = String::new();
+        for atom in src_file.atoms {
+            out_acc.push_str(&atom2str(&atom));
+        }
+        let src_path = get_truncated_file_name(&file.source_file, 1);
+        std::fs::write(src_path, out_acc).unwrap();
     }
     // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
 
