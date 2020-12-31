@@ -1,7 +1,47 @@
 use ansi_term::Colour;
+use clap::Clap;
 use diffus::edit::{self, collection};
 use diffus::{Diffable, Same};
 use diffus_derive::Diffus;
+
+/// This doc string acts as a help message when the user runs '--help'
+/// as do all doc strings on fields
+#[derive(Clap, Clone, Debug)]
+#[clap(version = "0.1", author = "Andrew Yourtchenko <ayourtch@gmail.com>")]
+struct Opts {
+    /// Sets a custom config file. Could have been an Option<T> with no default too
+    #[clap(short, long, default_value = "default.conf")]
+    config: String,
+    /// Strip the smallest prefix containing this many leading slashes: FIXME
+    #[clap(short = 'p', long, default_value = "0")]
+    strip: usize,
+    #[clap(index = 1)]
+    /// file name to patch
+    target_fname: Option<String>,
+    #[clap(index = 2)]
+    /// file name with a diff to apply
+    diff_fname: Option<String>,
+
+    /// A level of verbosity, and can be used multiple times
+    #[clap(short, long, parse(from_occurrences))]
+    verbose: i32,
+    //#[clap(subcommand)]
+    // subcmd: SubCommand,
+}
+
+#[derive(Clap, Clone, Debug)]
+enum SubCommand {
+    #[clap(version = "1.3", author = "Someone E. <someone_else@other.com>")]
+    Test(Test),
+}
+
+/// A subcommand for controlling testing
+#[derive(Clap, Clone, Debug)]
+struct Test {
+    /// Print debug info
+    #[clap(short)]
+    debug: bool,
+}
 
 #[derive(Diffus, Debug, Clone)]
 struct TextAtom {
@@ -477,28 +517,37 @@ fn do_patch(
     return src_file.clone();
 }
 
-fn test_unidiff() {
-    let diff_str = read_nth_arg(1);
+fn test_unidiff(opts: &Opts) {
+    let diff_str = if let Some(fname) = &opts.diff_fname {
+        std::fs::read_to_string(fname).unwrap()
+    } else {
+        use std::io::{self, Read};
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer).unwrap();
+        buffer
+    };
     let mut patch = unidiff::PatchSet::new();
     patch.parse(diff_str).ok().expect("Error parsing diff");
-    // println!("{:#?}", &patch);
-    let hunk = patch.files().first().unwrap().hunks().first().unwrap();
     for file in patch.files() {
-        println!("{}", Colour::Cyan.paint("==================="));
-        println!("{} {}", Colour::Cyan.paint("==="), file.source_file);
-        println!("{} {}", Colour::Cyan.paint("==="), file.target_file);
+        if opts.verbose > 1 {
+            eprintln!("{}", Colour::Cyan.paint("==================="));
+            eprintln!("{} {}", Colour::Cyan.paint("==="), file.source_file);
+            eprintln!("{} {}", Colour::Cyan.paint("==="), file.target_file);
+        }
         let mut src_file = parse_patched_file(file, 1);
         for hunk in file.hunks() {
-            println!("{} {}", Colour::Cyan.paint("==="), hunk.section_header);
-            println!(
-                "{} {:+0} lines [ {}[{}] {}[{}] ] =>\n",
-                Colour::Cyan.paint("==="),
-                hunk.added() as i64 - hunk.removed() as i64,
-                hunk.source_start,
-                hunk.source_length,
-                hunk.target_start,
-                hunk.target_length
-            );
+            if opts.verbose > 1 {
+                eprintln!("{} {}", Colour::Cyan.paint("==="), hunk.section_header);
+                eprintln!(
+                    "{} {:+0} lines [ {}[{}] {}[{}] ] =>\n",
+                    Colour::Cyan.paint("==="),
+                    hunk.added() as i64 - hunk.removed() as i64,
+                    hunk.source_start,
+                    hunk.source_length,
+                    hunk.target_start,
+                    hunk.target_length
+                );
+            }
             src_file = do_patch(&src_file, file, hunk);
         }
         let mut out_acc = String::new();
@@ -508,12 +557,11 @@ fn test_unidiff() {
         let src_path = get_truncated_file_name(&file.source_file, 1);
         std::fs::write(src_path, out_acc).unwrap();
     }
-    // let src = hunk.source_lines().into_iter().map(|x| x.value.clone()).collect::<Vec<&str>>().join("\n");
-
-    // println!("{:#?}", &hunk.target_lines().map(|x| x.value).collect());
 }
 
 fn main() {
-    test_unidiff();
+    let opts: Opts = Opts::parse();
+    println!("opts: {:#?}", &opts);
+    test_unidiff(&opts);
     println!("\n");
 }
