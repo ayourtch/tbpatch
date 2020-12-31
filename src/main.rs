@@ -561,7 +561,9 @@ fn test_unidiff(opts: &Opts) {
 
 fn main() {
     let opts: Opts = Opts::parse();
-    println!("opts: {:#?}", &opts);
+    if opts.verbose > 0 {
+        eprintln!("opts: {:#?}", &opts);
+    }
     test_unidiff(&opts);
     println!("\n");
 }
