@@ -15,10 +15,12 @@ struct Opts {
     /// Strip the smallest prefix containing this many leading slashes: FIXME
     #[clap(short = 'p', long, default_value = "0")]
     strip: usize,
+    /*
     #[clap(index = 1)]
     /// file name to patch
     target_fname: Option<String>,
     #[clap(index = 2)]
+    */
     /// file name with a diff to apply
     diff_fname: Option<String>,
 
@@ -141,7 +143,16 @@ fn parse_string(input: &str) -> ParseStruct {
 }
 
 fn parse_file(fname: &str) -> ParseStruct {
-    let fdata = std::fs::read_to_string(fname).unwrap();
+    let fdata = std::fs::read_to_string(fname);
+    if fdata.is_err() {
+        eprintln!("Error: {:?} opening file {}", &fdata, fname);
+        if fname == "dev/null" {
+            return parse_string("");
+        }
+    } else {
+        eprintln!("opened file {}", fname);
+    }
+    let fdata = fdata.unwrap();
     parse_string(&fdata)
 }
 
@@ -382,7 +393,6 @@ fn apply_patch<'a>(
     let mut atom_index = 0;
     let mut src_skip = 0;
 
-    println!("SRC: {:#?}", &src_file.atoms[p..p + 20]);
     match diff {
         edit::Edit::Copy(x) => {
             for atom in &right.atoms {
@@ -495,7 +505,11 @@ fn do_patch(
     print_diff(diff);
     let diff = src.diff(&dst);
 
-    let find_pos = find_needle(&src.atoms, &src_file.atoms, false);
+    let find_pos = if src_file.atoms.len() == 0  && src.atoms.len() == 0 {
+        Some(0)
+    } else {
+        find_needle(&src.atoms, &src_file.atoms, false)
+    };
     println!("FindPos: {:?} (of {})", &find_pos, src.atoms.len());
     if let Some(p) = find_pos {
         let mut out_file = ParseStruct {
@@ -554,8 +568,15 @@ fn test_unidiff(opts: &Opts) {
         for atom in src_file.atoms {
             out_acc.push_str(&atom2str(&atom));
         }
-        let src_path = get_truncated_file_name(&file.source_file, 1);
-        std::fs::write(src_path, out_acc).unwrap();
+        let src_path = get_truncated_file_name(&file.target_file, 1);
+        let mut src_dir = std::path::PathBuf::from(&src_path);
+        src_dir.pop();
+        std::fs::create_dir_all(src_dir).unwrap();
+        let res = std::fs::write(&src_path, out_acc);
+        if res.is_err() {
+            println!("Error: {:?} writing {}", &res, &src_path)
+        }
+        let res = res.unwrap();
     }
 }
 
