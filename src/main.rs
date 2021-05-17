@@ -109,7 +109,14 @@ fn parse_token(input: &str, i: usize) -> (Option<TextAtom>, usize) {
     for (ci, ch) in char_indices {
         match state {
             ParseTokenState::LeadingWhiteSpace => {
-                if ch.is_whitespace() {
+                if ch.is_whitespace() || (ch == '\\') {
+                    /*
+                     * testing only for "\" in this case is a gross simplification,
+                     * since we really should test for "\" followed by "\n", however
+                     * if we are in the "leading whitespace" state, there should be
+                     * no other valid scenario where "\" may appear, so this
+                     * shortcut should work.
+                     */
                     atom.leading_ws.push(ch)
                 } else {
                     atom.token_value.push(ch);
